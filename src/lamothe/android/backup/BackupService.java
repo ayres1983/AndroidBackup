@@ -28,10 +28,16 @@ public class BackupService extends Service {
 		}
 	}
 
+	private final IBinder binder = new LocalBinder();
+
+	@Override
+	public IBinder onBind(Intent intent) {
+		return binder;
+	}
+	
 	@Override
 	public void onCreate() {
 		notificationManager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-		showNotification(getText(R.string.backup_service_started));
 	}
 
 	private void copyFile(File from, SmbFile to) throws IOException {
@@ -40,7 +46,7 @@ public class BackupService extends Service {
 		
 		Log.i("BackupService", copyMessage);
 
-		showNotification(copyMessage);
+		showNotification("Copying " + from.getName());
 		
 		SmbFileOutputStream out = new SmbFileOutputStream(to);
 		try {
@@ -121,11 +127,9 @@ public class BackupService extends Service {
 	@Override
 	public int onStartCommand(Intent intent, int flags, int startId) {
 		if (thread != null) {
-			Toast.makeText(this, "Service alreading running",
-					Toast.LENGTH_SHORT);
+			showNotification("Service already running");
 		} else {
-			Toast.makeText(this, R.string.backup_service_started,
-					Toast.LENGTH_SHORT).show();
+			showToast(R.string.backup_service_started);
 			showNotification("Service running");
 
 			final Bundle bundle = intent.getExtras();
@@ -135,8 +139,14 @@ public class BackupService extends Service {
 				@Override
 				public void run() {
 					try {
+						String toDirectory = backupToDirectory;
+						if (!toDirectory.endsWith("/"))
+						{
+							toDirectory += "/";
+						}
+
 						SmbFile to = new SmbFile(
-								backupToDirectory + "/",
+								backupToDirectory,
 								new NtlmPasswordAuthentication(
 										bundle.getString("backupDomain"),
 										bundle.getString("backupUsername"),
@@ -144,11 +154,11 @@ public class BackupService extends Service {
 						File from = new File("/sdcard/DCIM");
 						copyFolder(from, to);
 					} catch (Exception e) {
-						String message = Utils.ThrowableToString(e);
+						String message = e.getMessage();
 						Log.e("BackupService", message);
-						showNotification(e.getMessage());
 					}
-					showNotification("Backup completed successfully");
+					thread = null;
+					cancelNotification();
 
 					Log.i("BackupService", "Complete!");
 				}
@@ -165,35 +175,31 @@ public class BackupService extends Service {
 			try {
 				thread.join();
 			} catch (InterruptedException ex) {
-				Log.i("BackupService", Utils.ThrowableToString(ex));
+				Log.i("BackupService", ex.getMessage());
+				showNotification(ex.getMessage());
 			}
 
 			thread = null;
-			notificationManager.cancel(R.string.backup_service_started);
-			Toast.makeText(this, R.string.backup_service_stopped,
-					Toast.LENGTH_SHORT).show();
-		} else {
-			Toast.makeText(this, R.string.backup_service_stopped,
-					Toast.LENGTH_SHORT).show();
+			cancelNotification();
 		}
+		showToast(R.string.backup_service_stopped);
 	}
-
-	private final IBinder binder = new LocalBinder();
-
-	@Override
-	public IBinder onBind(Intent intent) {
-		return binder;
+	
+	private void cancelNotification()
+	{
+		notificationManager.cancel(0);
+	}
+	
+	private void showToast(int id)
+	{
+		Toast.makeText(this, id, Toast.LENGTH_SHORT).show();		
 	}
 
 	private void showNotification(CharSequence text) {
-		Notification notification = new Notification(R.drawable.ic_launcher,
-				text, System.currentTimeMillis());
-		PendingIntent contentIntent = PendingIntent.getActivity(this, 0,
-				new Intent(this, BackupActivity.class), 0);
-		notification.setLatestEventInfo(this,
-				getText(R.string.backup_service_label), text, contentIntent);
-		notificationManager.notify(R.string.backup_service_started,
-				notification);
+		Notification notification = new Notification(R.drawable.ic_launcher, text, System.currentTimeMillis());
+		PendingIntent contentIntent = PendingIntent.getActivity(this, 0, new Intent(this, BackupActivity.class), 0);
+		notification.setLatestEventInfo(this, getText(R.string.backup_service_label), text, contentIntent);
+		notificationManager.notify(0, notification);
 	}
 
 }
